@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asyncexchange"
+version = "0.1.1"
+description = "Async outlook exchange api lib."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=1.10.4",
+    "exchangelib>=5.6.0",
+    "httpx>=0.28.1",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["asyncexchange*"]
+
+[project.urls]
+Homepage = "https://github.com/error1number404/asyncexchange"
+Issues = "https://github.com/error1number404/asyncexchange/issues"

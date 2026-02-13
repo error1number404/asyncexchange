@@ -1,0 +1,6 @@
+.*local.*
+.env
+.idea
+.venv
+__pycache__/
+test.py
