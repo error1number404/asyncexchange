@@ -1,4 +1,6 @@
 import datetime as dt
+import html as html_module
+import re
 import xml.etree.ElementTree as ET
 from typing import Iterable, List
 
@@ -15,6 +17,30 @@ class EwsXmlHelper:
     """
     Helper for building and parsing EWS SOAP XML payloads.
     """
+
+    @staticmethod
+    def _html_to_text(value: str) -> str:
+        """
+        HTML-to-text helper, similar to what
+        exchangelib exposes on the ``text_body`` property.
+
+        - Strips ``<script>`` / ``<style>`` blocks
+        - Strips all remaining tags
+        - Unescapes HTML entities
+        - Normalises consecutive whitespace to single spaces
+        """
+        if not value:
+            return ""
+
+        # Remove script and style contents.
+        no_script = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", "", value)
+        # Remove all remaining tags.
+        no_tags = re.sub(r"(?s)<[^>]+>", "", no_script)
+        # Unescape HTML entities.
+        unescaped = html_module.unescape(no_tags)
+        # Collapse whitespace.
+        cleaned = re.sub(r"\\s+", " ", unescaped).strip()
+        return cleaned
 
     @staticmethod
     def build_soap_envelope(body: str) -> str:
@@ -197,18 +223,33 @@ class EwsXmlHelper:
 
             author_email = from_el.text if from_el is not None and from_el.text else ""
 
+            body_text = (
+                body_el.text if body_el is not None and body_el.text else ""
+            )
+            body_type = (
+                body_el.attrib.get("BodyType", "").lower()
+                if body_el is not None
+                else ""
+            )
+            if body_type == "html":
+                html_body = body_text
+                text_body = EwsXmlHelper._html_to_text(body_text)
+            else:
+                html_body = ""
+                text_body = body_text
+
             msg = EmailMessage(
                 id=item_id_el.attrib.get("Id", ""),
                 change_key=item_id_el.attrib.get("ChangeKey", ""),
                 subject=subject_el.text if subject_el is not None and subject_el.text else "",
-                body=body_el.text if body_el is not None and body_el.text else "",
+                text_body=text_body,
+                html_body=html_body,
                 datetime_sent=dt.datetime.fromisoformat(sent_raw),
                 is_read=is_read_el.text.lower() == "true" if is_read_el is not None and is_read_el.text else False,
                 from_=author_email or None,
                 to=to_recips or None,
                 author=Mailbox(email_address=author_email) if author_email else None,
                 to_recipients=[Mailbox(email_address=e) for e in to_recips],
-                text_body=body_el.text if body_el is not None and body_el.text else "",
             )
             messages.append(msg)
 

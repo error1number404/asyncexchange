@@ -11,14 +11,15 @@ class EmailMessage(BaseModel):
     id: str
     change_key: str
     subject: str = ""
-    body: str = ""
+    text_body: str = ""
+    html_body: str = ""
     datetime_sent: dt.datetime
     is_read: bool = False
     from_: str | None = Field(default=None, alias="from")
     to: list[str] | None = None
     author: Mailbox | None = None
     to_recipients: list[Mailbox] = []
-    text_body: str = ""
+
 
     class Config:
         populate_by_name = True
@@ -26,4 +27,3 @@ class EmailMessage(BaseModel):
 
 class MarkAsReadPayload(BaseModel):
     ids: list[str]
-    
