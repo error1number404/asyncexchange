@@ -275,7 +275,6 @@ class EwsXmlHelper:
         Parse a ``ResolveNames`` SOAP response and return the first SMTP
         email address found, if any.
         """
-        print(root.text)
         # Typical structure:
         # <m:ResolveNamesResponseMessage>
         #   <m:ResolutionSet>
@@ -313,26 +312,26 @@ class EwsXmlHelper:
         Build the EWS ``UpdateItem`` request body that marks the given
         messages as read.
         """
-        updates_xml = ""
+        item_changes_xml = ""
         for msg in messages:
-            updates_xml += f"""
-        <m:ItemChanges>
-          <t:ItemChange>
-            <t:ItemId Id="{msg.id}" ChangeKey="{msg.change_key}" />
-            <t:Updates>
-              <t:SetItemField>
-                <t:FieldURI FieldURI="message:IsRead" />
-                <t:Message>
-                  <t:IsRead>true</t:IsRead>
-                </t:Message>
-              </t:SetItemField>
-            </t:Updates>
-          </t:ItemChange>
-        </m:ItemChanges>
+            item_changes_xml += f"""
+        <t:ItemChange>
+          <t:ItemId Id="{msg.id}" ChangeKey="{msg.change_key}" />
+          <t:Updates>
+            <t:SetItemField>
+              <t:FieldURI FieldURI="message:IsRead" />
+              <t:Message>
+                <t:IsRead>true</t:IsRead>
+              </t:Message>
+            </t:SetItemField>
+          </t:Updates>
+        </t:ItemChange>
             """
 
         return f"""
     <m:UpdateItem MessageDisposition="SaveOnly" ConflictResolution="AutoResolve">
-      {updates_xml}
+      <m:ItemChanges>
+        {item_changes_xml}
+      </m:ItemChanges>
     </m:UpdateItem>
         """
