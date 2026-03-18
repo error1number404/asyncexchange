@@ -19,6 +19,14 @@ class EwsXmlHelper:
     """
 
     @staticmethod
+    def ews_datetime_utc(value: dt.datetime) -> str:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=dt.timezone.utc)
+        value_utc = value.astimezone(dt.timezone.utc)
+        return value_utc.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    @staticmethod
     def _html_to_text(value: str) -> str:
         """
         HTML-to-text helper, similar to what
@@ -71,7 +79,6 @@ class EwsXmlHelper:
         Build the EWS ``FindItem`` request body for the Inbox with
         """
         conditions: list[str] = []
-
         # EWS "True" / "False" are capitalised strings.
         if is_read is not None:
             conditions.append(
@@ -86,19 +93,21 @@ class EwsXmlHelper:
             )
 
         if start is not None and end is not None:
+            start_utc = EwsXmlHelper.ews_datetime_utc(start)
+            end_utc = EwsXmlHelper.ews_datetime_utc(end)
             conditions.append(
                 f"""
               <t:And>
                 <t:IsGreaterThanOrEqualTo>
                   <t:FieldURI FieldURI="item:DateTimeSent" />
                   <t:FieldURIOrConstant>
-                    <t:Constant Value="{start.isoformat()}" />
+                    <t:Constant Value="{start_utc}" />
                   </t:FieldURIOrConstant>
                 </t:IsGreaterThanOrEqualTo>
                 <t:IsLessThanOrEqualTo>
                   <t:FieldURI FieldURI="item:DateTimeSent" />
                   <t:FieldURIOrConstant>
-                    <t:Constant Value="{end.isoformat()}" />
+                    <t:Constant Value="{end_utc}" />
                   </t:FieldURIOrConstant>
                 </t:IsLessThanOrEqualTo>
               </t:And>

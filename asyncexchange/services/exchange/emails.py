@@ -35,6 +35,14 @@ class EmailService(AsyncExchangeBaseService):
         """
         Fetch messages from the Exchange server.
         """
+        def _to_service_tz(value: dt.datetime | None) -> dt.datetime | None:
+            if value is None:
+                return None
+            return value.astimezone(self.tz)
+
+        start = _to_service_tz(start)
+        end = _to_service_tz(end)
+
         # First, use FindItem to get message IDs and basic metadata.
         body = EwsXmlHelper.build_finditem_body(start=start, end=end, is_read=is_read)
         root = await self._post_ews(
@@ -55,6 +63,8 @@ class EmailService(AsyncExchangeBaseService):
         )
         result = EwsXmlHelper.parse_getitem_response(root)
         for item in result:
+            if item.datetime_sent and item.datetime_sent.tzinfo is not None:
+                item.datetime_sent = item.datetime_sent.astimezone(self.tz)
             if item.author and item.author.email_address:
                 resolved = await self.resolve_email_address(item.author.email_address)
                 if resolved:
@@ -66,6 +76,7 @@ class EmailService(AsyncExchangeBaseService):
                     if resolved:
                         recipient.email_address = resolved
         return result
+
     async def mark_as_read(self, messages: Iterable[EmailMessage]) -> None:
         """
         Mark messages as read on the Exchange server.
