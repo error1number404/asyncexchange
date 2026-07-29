@@ -2,7 +2,7 @@ import datetime as dt
 import html as html_module
 import re
 import xml.etree.ElementTree as ET
-from typing import Iterable, List
+from collections.abc import Iterable
 
 from asyncexchange.models.email import EmailMessage, Mailbox
 
@@ -21,8 +21,8 @@ class EwsXmlHelper:
     @staticmethod
     def ews_datetime_utc(value: dt.datetime) -> str:
         if value.tzinfo is None:
-            value = value.replace(tzinfo=dt.timezone.utc)
-        value_utc = value.astimezone(dt.timezone.utc)
+            value = value.replace(tzinfo=dt.UTC)
+        value_utc = value.astimezone(dt.UTC)
         return value_utc.replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -201,12 +201,12 @@ class EwsXmlHelper:
         """
 
     @staticmethod
-    def _parse_messages_common(root: ET.Element) -> List[EmailMessage]:
+    def _parse_messages_common(root: ET.Element) -> list[EmailMessage]:
         """
         Internal helper to parse SOAP responses (``FindItem`` / ``GetItem``)
         into a list of ``EmailMessage`` objects.
         """
-        messages: List[EmailMessage] = []
+        messages: list[EmailMessage] = []
 
         for item in root.findall(".//t:Message", EWS_NS):
             item_id_el = item.find("t:ItemId", EWS_NS)
@@ -265,14 +265,14 @@ class EwsXmlHelper:
         return messages
 
     @staticmethod
-    def parse_finditem_response(root: ET.Element) -> List[EmailMessage]:
+    def parse_finditem_response(root: ET.Element) -> list[EmailMessage]:
         """
         Parse a ``FindItem`` SOAP response into a list of ``EmailMessage`` objects.
         """
         return EwsXmlHelper._parse_messages_common(root)
 
     @staticmethod
-    def parse_getitem_response(root: ET.Element) -> List[EmailMessage]:
+    def parse_getitem_response(root: ET.Element) -> list[EmailMessage]:
         """
         Parse a ``GetItem`` SOAP response into a list of ``EmailMessage`` objects.
         """

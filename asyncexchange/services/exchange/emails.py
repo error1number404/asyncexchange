@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Iterable, List
+from collections.abc import Iterable
 
 from asyncexchange.models.email import EmailMessage
 from asyncexchange.services.exchange.base import AsyncExchangeBaseService
@@ -31,7 +31,7 @@ class EmailService(AsyncExchangeBaseService):
         end: dt.datetime | None = None,
         start: dt.datetime | None = None,
         is_read: bool | None = None,
-    ) -> List[EmailMessage]:
+    ) -> list[EmailMessage]:
         """
         Fetch messages from the Exchange server.
         """

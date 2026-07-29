@@ -1,0 +1,7 @@
+prune test
+prune tests
+
+# Common local/build artifacts that should never ship
+prune build
+prune dist
+recursive-exclude *.egg-info *

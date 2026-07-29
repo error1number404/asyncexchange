@@ -4,17 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asyncexchange"
-version = "0.1.7.1"
+version = "0.2.0"
 description = "Async outlook exchange api lib."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
-    "pydantic>=1.10.4",
-    "exchangelib>=5.6.0",
-    "httpx~=0.23.3",
+    "pydantic>=2.13.4",
+    "httpx>=0.28.1",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
+
+# Local/dev only — not published in package metadata
+[dependency-groups]
+dev = [
+    "ruff>=0.16.0",
+    "isort==8.0.1",
+    "build>=1.5.0",
+    "twine>=7.0.0",
+    "uv-script>=0.1.9",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -23,3 +32,57 @@ include = ["asyncexchange*"]
 [project.urls]
 Homepage = "https://github.com/error1number404/asyncexchange"
 Issues = "https://github.com/error1number404/asyncexchange/issues"
+
+[tool.isort]
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+line_length = 88
+sort_reexports = true
+
+[tool.ruff]
+#target-version = "py313"
+
+exclude = [
+    "venv",
+    "requirements.txt",
+    ".venv",
+]
+
+line-length = 130
+indent-width = 4
+
+src = ["asyncexchange"]
+
+required-version = ">=0.6.0"
+
+[tool.ruff.lint]
+select = [
+    "E",    # flake8 errors
+    "W",    # flake8 warnings
+    "F",    # pyflakes
+    "B",    # bugbear
+    "I",    # import sorting (isort)
+    "UP",   # pyupgrade
+    "C4",   # comprehensions
+    "BLE",  # blind-except
+    "T20",  # print
+    "T10",  # debugger
+    "PT",   # pytest-style
+    "RUF",  # Ruff-specific rules
+]
+
+ignore = [
+    "E203",   # black-style compatibility
+    "E266",   # overly strict comments
+    "B008",   # function default arguments
+    "I001",   # don't flag import splits done by isort
+    "RUF006", # asyncio dangling task
+    "RUF012", # mutable class attr
+    "BLE001", # blind except
+]
+
+# update libs, uv run uvs check-up
+[tool.uvs.scripts]
+check-up = "uvx --from python-update-checker puc --exclude-newer '1 day' update pyproject.toml"
