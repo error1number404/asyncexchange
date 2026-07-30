@@ -1,10 +1,24 @@
 import datetime as dt
+import html
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 
 from asyncexchange.models.calendar import CalendarMeeting
 from asyncexchange.models.email import Mailbox
 from asyncexchange.services.xml.email import EWS_NS, EwsXmlHelper
+
+# Response codes that mean the caller cannot open the target calendar folder.
+_CALENDAR_ACCESS_ERRORS = frozenset(
+    {
+        "ErrorAccessDenied",
+        "ErrorFolderNotFound",
+        "ErrorItemNotFound",
+        "ErrorNonExistentMailbox",
+        "ErrorImpersonateUserDenied",
+        "ErrorImpersonationFailed",
+        "ErrorMailboxStoreUnavailable",
+    }
+)
 
 
 class CalendarXmlHelper:
@@ -18,13 +32,29 @@ class CalendarXmlHelper:
         start: dt.datetime,
         end: dt.datetime,
         max_entries: int = 1000,
+        email: str | None = None,
     ) -> str:
         """
         Build the EWS ``FindItem`` request body for the Calendar folder
         using a ``CalendarView`` over ``[start, end)``.
+
+        When ``email`` is set, the request targets that mailbox's calendar
+        (requires appropriate permissions); otherwise the authenticated
+        user's calendar is used.
         """
         start_utc = EwsXmlHelper.ews_datetime_utc(start)
         end_utc = EwsXmlHelper.ews_datetime_utc(end)
+
+        if email:
+            folder_id = f"""
+        <t:DistinguishedFolderId Id="calendar">
+          <t:Mailbox>
+            <t:EmailAddress>{html.escape(email, quote=True)}</t:EmailAddress>
+          </t:Mailbox>
+        </t:DistinguishedFolderId>"""
+        else:
+            folder_id = """
+        <t:DistinguishedFolderId Id="calendar" />"""
 
         return f"""
     <m:FindItem Traversal="Shallow">
@@ -42,10 +72,166 @@ class CalendarXmlHelper:
       </m:ItemShape>
       <m:CalendarView MaxEntriesReturned="{max_entries}" StartDate="{start_utc}" EndDate="{end_utc}" />
       <m:ParentFolderIds>
-        <t:DistinguishedFolderId Id="calendar" />
+        {folder_id}
       </m:ParentFolderIds>
     </m:FindItem>
         """
+
+    @staticmethod
+    def finditem_access_denied(root: ET.Element) -> bool:
+        """
+        Return True when a ``FindItem`` response indicates the caller
+        cannot open the target calendar folder.
+        """
+        for msg in root.findall(".//m:FindItemResponseMessage", EWS_NS):
+            if msg.attrib.get("ResponseClass") != "Error":
+                continue
+            code_el = msg.find("m:ResponseCode", EWS_NS)
+            code = code_el.text if code_el is not None and code_el.text else ""
+            if code in _CALENDAR_ACCESS_ERRORS:
+                return True
+        return False
+
+    @staticmethod
+    def build_getuseravailability_body(
+        *,
+        email: str,
+        start: dt.datetime,
+        end: dt.datetime,
+        merged_free_busy_interval: int = 30,
+    ) -> str:
+        """
+        Build an EWS ``GetUserAvailability`` request for free/busy
+        (and limited details when the free/busy ACL allows it).
+        """
+        start_utc = EwsXmlHelper.ews_datetime_utc(start)
+        end_utc = EwsXmlHelper.ews_datetime_utc(end)
+        # GetUserAvailability TimeWindow is interpreted in the request TimeZone;
+        # use naive UTC wall times (no Z) with Bias=0.
+        start_local = start_utc.rstrip("Z")
+        end_local = end_utc.rstrip("Z")
+        safe_email = html.escape(email, quote=True)
+
+        # Bias is minutes west of UTC. StandardTime/DaylightTime must use
+        # different months — identical transitions make Exchange reject the TZ.
+        return f"""
+    <m:GetUserAvailabilityRequest>
+      <t:TimeZone>
+        <t:Bias>0</t:Bias>
+        <t:StandardTime>
+          <t:Bias>0</t:Bias>
+          <t:Time>00:00:00</t:Time>
+          <t:DayOrder>1</t:DayOrder>
+          <t:Month>11</t:Month>
+          <t:DayOfWeek>Sunday</t:DayOfWeek>
+        </t:StandardTime>
+        <t:DaylightTime>
+          <t:Bias>0</t:Bias>
+          <t:Time>00:00:00</t:Time>
+          <t:DayOrder>1</t:DayOrder>
+          <t:Month>3</t:Month>
+          <t:DayOfWeek>Sunday</t:DayOfWeek>
+        </t:DaylightTime>
+      </t:TimeZone>
+      <m:MailboxDataArray>
+        <t:MailboxData>
+          <t:Email>
+            <t:Address>{safe_email}</t:Address>
+          </t:Email>
+          <t:AttendeeType>Required</t:AttendeeType>
+          <t:ExcludeConflicts>false</t:ExcludeConflicts>
+        </t:MailboxData>
+      </m:MailboxDataArray>
+      <t:FreeBusyViewOptions>
+        <t:TimeWindow>
+          <t:StartTime>{start_local}</t:StartTime>
+          <t:EndTime>{end_local}</t:EndTime>
+        </t:TimeWindow>
+        <t:MergedFreeBusyIntervalInMinutes>{merged_free_busy_interval}</t:MergedFreeBusyIntervalInMinutes>
+        <t:RequestedView>DetailedMerged</t:RequestedView>
+      </t:FreeBusyViewOptions>
+    </m:GetUserAvailabilityRequest>
+        """
+
+    @staticmethod
+    def parse_getuseravailability_response(root: ET.Element) -> list[CalendarMeeting]:
+        """
+        Parse ``GetUserAvailability`` into ``CalendarMeeting`` objects.
+
+        With free/busy-only permissions, only start/end/busy status are
+        populated. With limited details, subject/location may also appear;
+        body and attendees are never returned by this operation.
+        """
+        meetings: list[CalendarMeeting] = []
+        types_ns = EWS_NS["t"]
+        messages_ns = EWS_NS["m"]
+
+        def _child(parent: ET.Element, name: str) -> ET.Element | None:
+            el = parent.find(f"{{{types_ns}}}{name}")
+            if el is not None:
+                return el
+            return parent.find(f"{{{messages_ns}}}{name}")
+
+        events = root.findall(f".//{{{types_ns}}}CalendarEvent")
+        if not events:
+            events = root.findall(f".//{{{messages_ns}}}CalendarEvent")
+
+        for event in events:
+            start_el = _child(event, "StartTime")
+            end_el = _child(event, "EndTime")
+            if start_el is None or end_el is None:
+                continue
+
+            start = CalendarXmlHelper._parse_datetime(start_el.text)
+            end = CalendarXmlHelper._parse_datetime(end_el.text)
+            if start is None or end is None:
+                continue
+
+            # Request TimeZone uses Bias=0 (UTC). Naive wall times from the
+            # response are UTC — attach UTC so later astimezone() converts.
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt.UTC)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=dt.UTC)
+
+            busy_el = _child(event, "BusyType")
+            busy_status = (
+                busy_el.text if busy_el is not None and busy_el.text else "Busy"
+            )
+            if busy_status == "Free":
+                continue
+
+            details = _child(event, "CalendarEventDetails")
+            event_id = ""
+            subject = ""
+            location = ""
+            if details is not None:
+                id_el = _child(details, "ID")
+                subject_el = _child(details, "Subject")
+                location_el = _child(details, "Location")
+                event_id = id_el.text if id_el is not None and id_el.text else ""
+                subject = (
+                    subject_el.text if subject_el is not None and subject_el.text else ""
+                )
+                location = (
+                    location_el.text
+                    if location_el is not None and location_el.text
+                    else ""
+                )
+
+            meetings.append(
+                CalendarMeeting(
+                    id=event_id,
+                    change_key="",
+                    subject=subject,
+                    start=start,
+                    end=end,
+                    location=location,
+                    busy_status=busy_status,
+                )
+            )
+
+        return meetings
 
     @staticmethod
     def build_getitem_body(meetings: Iterable[CalendarMeeting]) -> str:
